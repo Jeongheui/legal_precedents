@@ -45,6 +45,9 @@ if "messages" not in st.session_state:
 if "agent_responses_history" not in st.session_state:
     st.session_state.agent_responses_history = []
 
+if "expansion_results_history" not in st.session_state:
+    st.session_state.expansion_results_history = []
+
 if "processing" not in st.session_state:
     st.session_state.processing = False
 
@@ -57,7 +60,8 @@ if "loaded_data" not in st.session_state:
     st.session_state.loaded_data = {
         "court_cases": [],
         "tax_cases": [],
-        "preprocessed_data": {}
+        "preprocessed_data": {},
+        "law_terms": []
     }
 
 with st.sidebar:
@@ -86,6 +90,7 @@ with st.sidebar:
         # 메시지 기록 및 에이전트 답변 초기화 (데이터는 유지)
         st.session_state.messages = []
         st.session_state.agent_responses_history = []
+        st.session_state.expansion_results_history = []
         st.session_state.processing = False
         st.success("새로운 대화가 시작되었습니다.")
 
@@ -97,11 +102,12 @@ else:
     # 데이터가 아직 로드되지 않았다면 로드
     if not st.session_state.loaded_data["court_cases"]:
         with st.spinner("데이터를 로드하고 전처리 중입니다..."):
-            court_cases, tax_cases, preprocessed_data = load_data()
+            court_cases, tax_cases, preprocessed_data, law_terms = load_data()
             st.session_state.loaded_data = {
                 "court_cases": court_cases,
                 "tax_cases": tax_cases,
-                "preprocessed_data": preprocessed_data
+                "preprocessed_data": preprocessed_data,
+                "law_terms": law_terms
             }
             st.success("데이터 로드 및 전처리가 완료되었습니다.")
 
@@ -112,7 +118,23 @@ with tab1:
     for message in st.session_state.messages:
         with st.chat_message(message["role"]):
             if message["role"] == "assistant":
-                # assistant 메시지 카운터를 사용하여 올바른 에이전트 답변 가져오기
+                # === 쿼리 확장 결과 표시 (NEW) ===
+                if assistant_count < len(st.session_state.expansion_results_history):
+                    expansion_result = st.session_state.expansion_results_history[assistant_count]
+                    if expansion_result:
+                        with st.expander("🔍 쿼리 확장 결과 보기", expanded=False):
+                            st.markdown("**유사질문 (3개):**")
+                            for i, q in enumerate(expansion_result['similar_questions'], 1):
+                                st.markdown(f"{i}. {q}")
+
+                            st.markdown("")
+                            st.markdown("**핵심어:**")
+                            for term in expansion_result['key_terms']:
+                                st.markdown(f"• {term}")
+
+                        st.divider()
+
+                # === 에이전트 답변 표시 (기존) ===
                 if assistant_count < len(st.session_state.agent_responses_history):
                     agent_responses = st.session_state.agent_responses_history[assistant_count]
                     if agent_responses:
@@ -153,6 +175,7 @@ with tab1:
                 court_cases = st.session_state.loaded_data["court_cases"]
                 tax_cases = st.session_state.loaded_data["tax_cases"]
                 preprocessed_data = st.session_state.loaded_data["preprocessed_data"]
+                law_terms = st.session_state.loaded_data["law_terms"]
 
                 # 대화 맥락 가져오기
                 conversation_history = ""
@@ -160,6 +183,9 @@ with tab1:
                     conversation_history = get_conversation_history(
                         max_messages=st.session_state.get('max_history', 5)
                     )
+
+                # === [섹션 0] 쿼리 확장 결과 표시 (NEW) ===
+                query_expansion_section = st.empty()
 
                 # === [섹션 1] 실시간 진행 상황 표시 ===
                 progress_display = st.empty()
@@ -181,11 +207,33 @@ with tab1:
 
                 # 제너레이터로 실시간 처리
                 agent_responses = []
+                expansion_result = None
                 completed_count = 0
 
                 for result in run_parallel_agents(
-                    client, court_cases, tax_cases, preprocessed_data, prompt, conversation_history
+                    client, court_cases, tax_cases, preprocessed_data, prompt, conversation_history, law_terms
                 ):
+                    # 쿼리 확장 결과 처리 (첫 번째로 도착)
+                    if result.get("type") == "expansion_result":
+                        expansion_result = result["data"]
+
+                        # 섹션 0에 쿼리 확장 expander 표시
+                        with query_expansion_section.container():
+                            with st.expander("🔍 쿼리 확장 결과 보기", expanded=False):
+                                st.markdown("**유사질문 (3개):**")
+                                for i, q in enumerate(expansion_result['similar_questions'], 1):
+                                    st.markdown(f"{i}. {q}")
+
+                                st.markdown("")
+                                st.markdown("**핵심어:**")
+                                for term in expansion_result['key_terms']:
+                                    st.markdown(f"• {term}")
+
+                            st.divider()
+
+                        continue  # 다음 result 처리
+
+                    # 에이전트 결과 처리
                     # 에이전트 인덱스 추출 (예: "Agent 3" -> 2)
                     agent_num = int(result['agent'].split()[-1]) - 1
 
@@ -238,6 +286,7 @@ with tab1:
                 # 응답 및 에이전트 답변 저장
                 st.session_state.messages.append({"role": "assistant", "content": final_response})
                 st.session_state.agent_responses_history.append(agent_responses)
+                st.session_state.expansion_results_history.append(expansion_result)
 
             except Exception as e:
                 st.error(f"오류가 발생했습니다: {str(e)}")
@@ -246,6 +295,7 @@ with tab1:
                 error_message = f"오류가 발생했습니다: {str(e)}"
                 st.session_state.messages.append({"role": "assistant", "content": error_message})
                 st.session_state.agent_responses_history.append([])  # 빈 리스트 추가 (인덱스 맞추기)
+                st.session_state.expansion_results_history.append(None)  # None 추가 (인덱스 맞추기)
 
         # 처리 완료
         st.session_state.processing = False

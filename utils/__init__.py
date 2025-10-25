@@ -40,6 +40,14 @@ from .precedent_search import (
     format_precedent_summary
 )
 
+# 쿼리 확장
+from .query_expander import (
+    load_law_terms_dictionary,
+    expand_query,
+    generate_similar_questions,
+    extract_key_terms
+)
+
 __all__ = [
     # 설정
     'initialize_client',
@@ -62,5 +70,9 @@ __all__ = [
     'prepare_head_agent_input', 'run_head_agent',
 
     # 판례 검색
-    'search_precedent', 'format_precedent_title', 'format_precedent_summary'
+    'search_precedent', 'format_precedent_title', 'format_precedent_summary',
+
+    # 쿼리 확장
+    'load_law_terms_dictionary', 'expand_query',
+    'generate_similar_questions', 'extract_key_terms'
 ]

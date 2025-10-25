@@ -108,15 +108,21 @@ def preprocess_data(court_cases, tax_cases):
     return result
 
 
-def search_relevant_data(query, preprocessed_data, chunk_info, top_n=5, conversation_history=""):
-    """질문과 관련성이 높은 데이터 항목을 검색 (통합 벡터화된 데이터 활용)"""
-    # 쿼리 전처리
-    enhanced_query = query
-    if conversation_history:
-        enhanced_query = f"{query} {conversation_history}"
+def search_relevant_data(query, preprocessed_data, chunk_info, top_n=5, conversation_history="", keyword_group=None):
+    """
+    질문과 관련성이 높은 데이터 항목을 검색 (통합 벡터화된 데이터 활용)
 
-    enhanced_query = preprocess_text(enhanced_query)
+    Args:
+        query: 원본 사용자 질문 (하위 호환성 유지용)
+        preprocessed_data: 전처리된 데이터
+        chunk_info: 청크 정보
+        top_n: 반환할 최대 항목 수
+        conversation_history: 대화 기록
+        keyword_group: 확장된 키워드 그룹 (리스트). None이면 기존 방식 사용
 
+    Returns:
+        relevant_data: 관련성 높은 데이터 항목 리스트
+    """
     try:
         # 통합 벡터화된 데이터 사용
         vectorizer = preprocessed_data["vectorizer"]
@@ -130,8 +136,38 @@ def search_relevant_data(query, preprocessed_data, chunk_info, top_n=5, conversa
         # 해당 청크의 TF-IDF 행렬만 추출
         chunk_tfidf_matrix = tfidf_matrix[start_idx:end_idx]
 
-        # 쿼리 벡터화
-        query_vec = vectorizer.transform([enhanced_query])
+        # === 쿼리 확장 방식 선택 ===
+        if keyword_group and len(keyword_group) > 0:
+            # 새로운 방식: 키워드 그룹 사용
+            logging.info(f"키워드 그룹 검색 ({len(keyword_group)}개 키워드)")
+
+            # 각 키워드를 전처리
+            processed_keywords = []
+            for keyword in keyword_group:
+                processed = preprocess_text(keyword)
+                if processed:  # 빈 문자열 제외
+                    processed_keywords.append(processed)
+
+            # 모든 키워드를 하나의 문자열로 결합 (중복 제거)
+            combined_query = " ".join(processed_keywords)
+
+            # 대화 기록 추가
+            if conversation_history:
+                combined_query = f"{combined_query} {conversation_history}"
+
+            # 쿼리 벡터화
+            query_vec = vectorizer.transform([combined_query])
+
+        else:
+            # 기존 방식: 단일 쿼리 사용 (하위 호환성)
+            logging.info("단일 쿼리 검색 (기존 방식)")
+            enhanced_query = query
+            if conversation_history:
+                enhanced_query = f"{query} {conversation_history}"
+            enhanced_query = preprocess_text(enhanced_query)
+
+            # 쿼리 벡터화
+            query_vec = vectorizer.transform([enhanced_query])
 
         # 코사인 유사도 계산
         similarities = cosine_similarity(query_vec, chunk_tfidf_matrix)[0]

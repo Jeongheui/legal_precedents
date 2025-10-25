@@ -101,9 +101,27 @@ def load_vectorization_cache():
         return None
 
 
+def load_law_terms_dictionary():
+    """법률 용어 사전 로드"""
+    terms_file = "law_terms_dictionary.json"
+    try:
+        if os.path.exists(terms_file):
+            with open(terms_file, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                law_terms = data.get("용어_목록", [])
+            logging.info(f"법률 용어 사전 로드 완료: {len(law_terms)}개 용어")
+            return law_terms
+        else:
+            logging.warning(f"법률 용어 사전 파일을 찾을 수 없습니다: {terms_file}")
+            return []
+    except Exception as e:
+        logging.error(f"법률 용어 사전 로드 실패: {str(e)}")
+        return []
+
+
 @st.cache_data
 def load_data():
-    """판례 데이터 로드"""
+    """판례 데이터 및 법률 용어 사전 로드"""
     try:
         # 판례 데이터 로드1
         with open("data_kcs.json", "r", encoding="utf-8") as f:
@@ -114,6 +132,13 @@ def load_data():
         with open("data_moleg.json", "r", encoding="utf-8") as f:
             tax_cases = json.load(f)
         st.sidebar.success(f"MOLEG 판례 데이터 로드 완료: {len(tax_cases)}건")
+
+        # 법률 용어 사전 로드
+        law_terms = load_law_terms_dictionary()
+        if law_terms:
+            st.sidebar.success(f"법률 용어 사전 로드 완료: {len(law_terms)}개 용어")
+        else:
+            st.sidebar.warning("법률 용어 사전을 로드하지 못했습니다 (쿼리 확장 비활성화)")
 
         # 캐시된 벡터화 결과 확인
         preprocessed_data = load_vectorization_cache()
@@ -129,13 +154,13 @@ def load_data():
             save_vectorization_cache(preprocessed_data)
             st.sidebar.success("벡터화 인덱스 생성 및 저장 완료!")
 
-        return court_cases, tax_cases, preprocessed_data
+        return court_cases, tax_cases, preprocessed_data, law_terms
 
     except FileNotFoundError as e:
         st.sidebar.error(f"파일을 찾을 수 없습니다: {e}")
         st.error("필수 데이터 파일을 찾을 수 없습니다. 애플리케이션 디렉토리에 필요한 파일이 있는지 확인하세요.")
-        return [], [], {}
+        return [], [], {}, []
     except json.JSONDecodeError as e:
         st.sidebar.error(f"JSON 파일 파싱 오류: {e}")
         st.error("JSON 파일 형식이 올바르지 않습니다. 파일 형식을 확인하세요.")
-        return [], [], {}
+        return [], [], {}, []

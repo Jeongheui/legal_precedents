@@ -49,15 +49,28 @@ def get_agent_prompt(agent_type):
 """
 
 
-def run_agent(client, agent_type, user_query, preprocessed_data, chunk_info, agent_index=None, conversation_history=""):
-    """특정 유형의 에이전트 실행 (통합 벡터화 데이터 사용)"""
+def run_agent(client, agent_type, user_query, preprocessed_data, chunk_info, agent_index=None, conversation_history="", keyword_group=None):
+    """
+    특정 유형의 에이전트 실행 (통합 벡터화 데이터 사용)
+
+    Args:
+        client: Gemini API 클라이언트
+        agent_type: 에이전트 타입
+        user_query: 사용자 질문
+        preprocessed_data: 전처리된 데이터
+        chunk_info: 청크 정보
+        agent_index: 에이전트 인덱스
+        conversation_history: 대화 기록
+        keyword_group: 확장된 키워드 그룹 (None이면 기존 방식)
+    """
     # 프롬프트 생성
     prompt = get_agent_prompt(agent_type)
 
     # 질문과 관련성이 높은 데이터 검색
     relevant_data = search_relevant_data(
         user_query, preprocessed_data, chunk_info,
-        conversation_history=conversation_history
+        conversation_history=conversation_history,
+        keyword_group=keyword_group
     )
 
     # 관련 데이터가 없는 경우 처리
@@ -107,13 +120,47 @@ def run_agent(client, agent_type, user_query, preprocessed_data, chunk_info, age
         }
 
 
-def run_parallel_agents(client, court_cases, tax_cases, preprocessed_data, user_query, conversation_history=""):
-    """모든 에이전트를 병렬로 실행하고 완료되는 즉시 결과 yield (통합 벡터화 버전)"""
+def run_parallel_agents(client, court_cases, tax_cases, preprocessed_data, user_query, conversation_history="", law_terms=None):
+    """
+    모든 에이전트를 병렬로 실행하고 완료되는 즉시 결과 yield (쿼리 확장 지원)
+
+    Args:
+        client: Gemini API 클라이언트
+        court_cases: KCS 판례 데이터
+        tax_cases: MOLEG 판례 데이터
+        preprocessed_data: 전처리된 데이터
+        user_query: 사용자 질문
+        conversation_history: 대화 기록
+        law_terms: 법률 용어 사전 (None이면 쿼리 확장 비활성화)
+    """
     from concurrent.futures import as_completed
 
     results = [None] * 6  # 순서 보장을 위한 고정 크기 리스트
+    keyword_group = None
+    expansion_result = None
 
     try:
+        # === 쿼리 확장 (법률 용어 사전이 있을 때만) ===
+        if law_terms and len(law_terms) > 0:
+            logging.info("쿼리 확장 시작...")
+            from .query_expander import expand_query
+
+            expansion_result = expand_query(client, user_query, law_terms)
+            keyword_group = expansion_result["keyword_group"]
+
+            logging.info(f"쿼리 확장 완료:")
+            logging.info(f"  - 유사질문: {expansion_result['similar_questions']}")
+            logging.info(f"  - 핵심어: {expansion_result['key_terms']}")
+            logging.info(f"  - 총 키워드 수: {len(keyword_group)}")
+
+            # 쿼리 확장 결과를 첫 번째로 yield (에이전트 결과보다 먼저)
+            yield {
+                "type": "expansion_result",
+                "data": expansion_result
+            }
+        else:
+            logging.info("법률 용어 사전이 없어 쿼리 확장 비활성화 (기존 방식 사용)")
+
         # 청크 정보 가져오기
         chunks_info = preprocessed_data["chunks_info"]
 
@@ -127,7 +174,8 @@ def run_parallel_agents(client, court_cases, tax_cases, preprocessed_data, user_
                 agent_type = chunk_info['agent_type']
                 future = executor.submit(
                     run_agent, client, agent_type, user_query,
-                    preprocessed_data, chunk_info, i, conversation_history
+                    preprocessed_data, chunk_info, i, conversation_history,
+                    keyword_group  # 키워드 그룹 전달
                 )
                 future_to_index[future] = i - 1  # 0-based index 저장
 
@@ -136,6 +184,9 @@ def run_parallel_agents(client, court_cases, tax_cases, preprocessed_data, user_
                 index = future_to_index[future]
                 result = future.result()
                 results[index] = result
+
+                # 에이전트 결과에 type 추가
+                result["type"] = "agent_result"
 
                 # 완료된 결과 즉시 반환
                 yield result
