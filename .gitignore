@@ -5,3 +5,6 @@ __pycache__/
 .python-version
 previously/
 README_standard.md
+
+# Test files
+test_*.py
