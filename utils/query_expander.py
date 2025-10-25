@@ -103,7 +103,7 @@ def generate_similar_questions(client, user_query, law_terms):
 
 def extract_key_terms(client, user_query, law_terms):
     """Gemini 2.0 Flash를 사용하여 핵심어 5개 이내 추출"""
-    terms_str = ", ".join(law_terms[:200])
+    terms_str = ", ".join(law_terms)
 
     prompt = f"""# 역할
 당신은 관세법 전문가입니다. 사용자의 질문에서 핵심 법률 용어를 추출하는 역할을 합니다.
