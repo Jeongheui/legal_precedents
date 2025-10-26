@@ -462,18 +462,10 @@ if __name__ == "__main__":
         print(f"크롤링 완료! 총 {len(data)}건의 데이터를 수집했습니다.")
         
         # 데이터 저장 (프로젝트 루트에 저장)
-        output_file = PROJECT_ROOT / f"law_portal_data_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+        output_file = PROJECT_ROOT / "data_moleg_temp.json"
         with open(output_file, "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=4)
 
         print(f"데이터가 {output_file}에 저장되었습니다.")
-
-        # 판례 전문만 따로 저장 (프로젝트 루트에 저장)
-        case_contents = [item for item in data if item.get('판례전문')]
-        if case_contents:
-            case_output_file = PROJECT_ROOT / f"law_portal_cases_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
-            with open(case_output_file, "w", encoding="utf-8") as f:
-                json.dump(case_contents, f, ensure_ascii=False, indent=4)
-            print(f"판례 전문이 {case_output_file}에 저장되었습니다.")
     else:
         print("수집된 데이터가 없습니다.")
