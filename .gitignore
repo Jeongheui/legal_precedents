@@ -8,3 +8,7 @@ README_standard.md
 
 # Test files
 test_*.py
+
+# Temporary and backup data files
+*temp*.json
+*backup*.json
