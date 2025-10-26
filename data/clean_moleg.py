@@ -117,8 +117,32 @@ class MOLEGDataCleaner:
         """Create backup of original file"""
         backup_name = f"{filename}{self.backup_suffix}"
         shutil.copy2(filename, backup_name)
-        print(f"✓ Backup created: {backup_name}")
+        print(f"[OK] Backup created: {backup_name}")
         return backup_name
+
+    def clean_case_number(self, case_number):
+        """Clean and standardize case number format
+
+        Args:
+            case_number (str): Raw case number from crawler
+
+        Returns:
+            str: Cleaned case number or empty string if invalid
+        """
+        if not case_number:
+            return ''
+
+        case_number = case_number.strip()
+
+        # Remove error messages
+        invalid_patterns = ['판례번호 없음', '오류 발생', 'error', 'none']
+        if any(pattern in case_number.lower() for pattern in invalid_patterns):
+            return ''
+
+        # Clean up brackets and whitespace
+        case_number = re.sub(r'\s+', ' ', case_number)
+
+        return case_number
 
     def find_duplicates(self, data):
         """Find duplicate entries by 판례번호 and similar content"""
@@ -181,54 +205,91 @@ class MOLEGDataCleaner:
 
         return duplicates
 
-    def extract_structured_fields(self, content):
-        """Extract structured information from the '내용' field"""
+    def extract_structured_fields(self, content, case_number=''):
+        """Extract structured information from the '내용' field
+
+        Args:
+            content (str): Content field text
+            case_number (str): Case number for additional extraction
+
+        Returns:
+            dict: Extracted structured fields
+        """
         extracted = {}
 
         # 2.1. 선고일자 (Decision date)
-        date_patterns = [
-            r'(\d{4})\.\s*(\d{1,2})\.\s*(\d{1,2})\.\s*선고',  # 2024. 1. 1. 선고
-            r'(\d{4})-(\d{2})-(\d{2})',                        # 2024-01-01
-            r'(\d{4})년\s*(\d{1,2})월\s*(\d{1,2})일',          # 2024년 1월 1일
-            r'\[.*?(\d{4})\.\s*(\d{1,2})\.\s*(\d{1,2})\.\s*선고'  # [대법원 2024. 1. 1. 선고
-        ]
-
-        for pattern in date_patterns:
-            matches = re.findall(pattern, content)
-            if matches:
+        # Try to extract from case_number first (higher priority)
+        if case_number:
+            case_date_pattern = r'\[.*?(\d{4})\.\s*(\d{1,2})\.\s*(\d{1,2})\.\s*선고'
+            match = re.search(case_date_pattern, case_number)
+            if match:
                 try:
-                    match = matches[0]  # Take first match
-                    if len(match) >= 3:
-                        year, month, day = match[:3]
-                        date_str = f"{year}-{int(month):02d}-{int(day):02d}"
-                        # Validate date
-                        datetime.strptime(date_str, '%Y-%m-%d')
-                        if 1990 <= int(year) <= 2025:  # Reasonable year range
-                            extracted['선고일자'] = date_str
-                            break
+                    year, month, day = match.groups()
+                    date_str = f"{year}-{int(month):02d}-{int(day):02d}"
+                    datetime.strptime(date_str, '%Y-%m-%d')
+                    if 1990 <= int(year) <= 2025:
+                        extracted['선고일자'] = date_str
                 except:
-                    continue
+                    pass
+
+        # If not found in case_number, try content
+        if '선고일자' not in extracted:
+            date_patterns = [
+                r'(\d{4})\.\s*(\d{1,2})\.\s*(\d{1,2})\.\s*선고',  # 2024. 1. 1. 선고
+                r'(\d{4})-(\d{2})-(\d{2})',                        # 2024-01-01
+                r'(\d{4})년\s*(\d{1,2})월\s*(\d{1,2})일',          # 2024년 1월 1일
+                r'\[.*?(\d{4})\.\s*(\d{1,2})\.\s*(\d{1,2})\.\s*선고'  # [대법원 2024. 1. 1. 선고
+            ]
+
+            for pattern in date_patterns:
+                matches = re.findall(pattern, content)
+                if matches:
+                    try:
+                        match = matches[0]  # Take first match
+                        if len(match) >= 3:
+                            year, month, day = match[:3]
+                            date_str = f"{year}-{int(month):02d}-{int(day):02d}"
+                            # Validate date
+                            datetime.strptime(date_str, '%Y-%m-%d')
+                            if 1990 <= int(year) <= 2025:  # Reasonable year range
+                                extracted['선고일자'] = date_str
+                                break
+                    except:
+                        continue
 
         # 2.2. 법원명 (Court name)
-        court_patterns = [
-            r'(\[대법원\s+\d{4})',                    # [대법원 2024
-            r'(\[.*?고등법원\s+\d{4})',               # [서울고등법원 2024
-            r'(\[.*?지방법원\s+\d{4})',               # [인천지방법원 2024
-            r'(대법원)',                             # 대법원
-            r'(서울고등법원|부산고등법원|대구고등법원|광주고등법원|대전고등법원|수원고등법원)',
-            r'(\w+고등법원)',                        # 기타고등법원
-            r'(\w+지방?법원)',                       # 지방법원
-        ]
-
-        for pattern in court_patterns:
-            match = re.search(pattern, content)
+        # Try to extract from case_number first (higher priority)
+        if case_number:
+            case_court_pattern = r'\[([^0-9\]]+?)\s+\d{4}'
+            match = re.search(case_court_pattern, case_number)
             if match:
-                court_name = match.group(1)
+                court_name = match.group(1).strip()
                 # Clean up court name
-                court_name = re.sub(r'\[|\]|\d{4}.*', '', court_name).strip()
+                court_name = re.sub(r'\s+', ' ', court_name)
                 if court_name and len(court_name) <= 20:
                     extracted['법원명'] = court_name
-                    break
+
+        # If not found in case_number, try content
+        if '법원명' not in extracted:
+            court_patterns = [
+                r'(\[대법원\s+\d{4})',                    # [대법원 2024
+                r'(\[.*?고등법원\s+\d{4})',               # [서울고등법원 2024
+                r'(\[.*?지방법원\s+\d{4})',               # [인천지방법원 2024
+                r'(대법원)',                             # 대법원
+                r'(서울고등법원|부산고등법원|대구고등법원|광주고등법원|대전고등법원|수원고등법원)',
+                r'(\w+고등법원)',                        # 기타고등법원
+                r'(\w+지방?법원)',                       # 지방법원
+            ]
+
+            for pattern in court_patterns:
+                match = re.search(pattern, content)
+                if match:
+                    court_name = match.group(1)
+                    # Clean up court name
+                    court_name = re.sub(r'\[|\]|\d{4}.*', '', court_name).strip()
+                    if court_name and len(court_name) <= 20:
+                        extracted['법원명'] = court_name
+                        break
 
         # 2.3. 사건유형 (Case type)
         case_type_patterns = [
@@ -346,6 +407,26 @@ class MOLEGDataCleaner:
         duplicates = self.find_duplicates(data)
 
         # Remove duplicates (keep first occurrence)
+        # First, clean case numbers
+        print(f"\n" + "=" * 50)
+        print("CASE NUMBER CLEANING")
+        print("=" * 50)
+
+        cleaned_case_count = 0
+        for entry in data:
+            original_case_number = entry.get('판례번호', '')
+            cleaned_case_number = self.clean_case_number(original_case_number)
+
+            if original_case_number != cleaned_case_number:
+                cleaned_case_count += 1
+                if cleaned_case_count <= 3:  # Show first 3 examples
+                    print(f"Cleaned: '{original_case_number}' → '{cleaned_case_number}'")
+
+            entry['판례번호'] = cleaned_case_number
+
+        print(f"\nCleaned {cleaned_case_count} case numbers")
+
+        # Now remove duplicates
         cleaned_data = []
         seen_case_numbers = set()
         removed_duplicates = []
@@ -395,8 +476,11 @@ class MOLEGDataCleaner:
 
             # Extract structured fields
             content = entry.get('내용', '')
+            case_number = entry.get('판례번호', '')
+
             if content:
-                extracted_fields = self.extract_structured_fields(content)
+                # Pass case_number to extraction function for better accuracy
+                extracted_fields = self.extract_structured_fields(content, case_number)
 
                 # Add extracted fields
                 for field_name, field_value in extracted_fields.items():
