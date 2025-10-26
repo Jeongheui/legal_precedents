@@ -105,8 +105,12 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).parent.parent
 
 class MOLEGDataCleaner:
-    def __init__(self):
-        self.moleg_data_file = str(PROJECT_ROOT / "data_moleg.json")
+    def __init__(self, input_file=None):
+        # 입력 파일 지정 가능 (기본값: data_moleg_temp.json)
+        if input_file is None:
+            self.moleg_data_file = str(PROJECT_ROOT / "data_moleg_temp.json")
+        else:
+            self.moleg_data_file = str(PROJECT_ROOT / input_file)
         self.backup_suffix = f"_backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
 
     def create_backup(self, filename):
@@ -319,8 +323,13 @@ class MOLEGDataCleaner:
 
         return extracted
 
-    def clean_and_extract(self, dry_run=True):
-        """Clean duplicates and extract structured fields"""
+    def clean_and_extract(self, dry_run=True, save_to_file=True):
+        """Clean duplicates and extract structured fields
+
+        Args:
+            dry_run (bool): If True, only preview changes without saving
+            save_to_file (bool): If True, save results to file (only when dry_run=False)
+        """
         print("=" * 60)
         print("CLEANING data_moleg.json")
         print("=" * 60)
@@ -450,50 +459,53 @@ class MOLEGDataCleaner:
 
         # Save results
         if not dry_run:
-            # Create backup
-            self.create_backup(self.moleg_data_file)
+            if save_to_file:
+                # Create backup
+                self.create_backup(self.moleg_data_file)
 
-            # Save enriched data to original file
-            with open(self.moleg_data_file, 'w', encoding='utf-8') as f:
-                json.dump(enriched_data, f, ensure_ascii=False, indent=2)
-            print(f"\n✓ Enriched data saved to: {self.moleg_data_file}")
+                # Save enriched data to original file
+                with open(self.moleg_data_file, 'w', encoding='utf-8') as f:
+                    json.dump(enriched_data, f, ensure_ascii=False, indent=2)
+                print(f"\n✓ Enriched data saved to: {self.moleg_data_file}")
 
-            # Generate detailed report
-            report = {
-                'processing_summary': {
-                    'original_count': original_count,
-                    'deduplicated_count': deduplicated_count,
-                    'duplicates_removed': duplicates_removed,
-                    'final_count': len(enriched_data)
-                },
-                'deduplication_details': {
-                    'removed_duplicates': removed_duplicates
-                },
-                'extraction_statistics': dict(extraction_stats),
-                'extraction_success_rates': {
-                    field: round((count / deduplicated_count) * 100, 2)
-                    for field, count in extraction_stats.items()
-                },
-                'baseline_date_info': {
-                    'latest_date': latest_date.strftime('%Y-%m-%d') if latest_date else None,
-                    'extracted_dates_count': len(latest_dates)
-                },
-                'extracted_fields': [
-                    '선고일자 (Decision date)',
-                    '법원명 (Court name)',
-                    '사건유형 (Case type)',
-                    '판결요지 (Decision summary)',
-                    '참조조문 (Referenced articles)',
-                    '판결결과 (Decision result)'
-                ],
-                'timestamp': datetime.now().isoformat(),
-                'backup_file': f"{self.moleg_data_file}{self.backup_suffix}"
-            }
+                # Generate detailed report
+                report = {
+                    'processing_summary': {
+                        'original_count': original_count,
+                        'deduplicated_count': deduplicated_count,
+                        'duplicates_removed': duplicates_removed,
+                        'final_count': len(enriched_data)
+                    },
+                    'deduplication_details': {
+                        'removed_duplicates': removed_duplicates
+                    },
+                    'extraction_statistics': dict(extraction_stats),
+                    'extraction_success_rates': {
+                        field: round((count / deduplicated_count) * 100, 2)
+                        for field, count in extraction_stats.items()
+                    },
+                    'baseline_date_info': {
+                        'latest_date': latest_date.strftime('%Y-%m-%d') if latest_date else None,
+                        'extracted_dates_count': len(latest_dates)
+                    },
+                    'extracted_fields': [
+                        '선고일자 (Decision date)',
+                        '법원명 (Court name)',
+                        '사건유형 (Case type)',
+                        '판결요지 (Decision summary)',
+                        '참조조문 (Referenced articles)',
+                        '판결결과 (Decision result)'
+                    ],
+                    'timestamp': datetime.now().isoformat(),
+                    'backup_file': f"{self.moleg_data_file}{self.backup_suffix}"
+                }
 
-            report_file = PROJECT_ROOT / 'moleg_cleaning_report.json'
-            with open(report_file, 'w', encoding='utf-8') as f:
-                json.dump(report, f, ensure_ascii=False, indent=2)
-            print(f"✓ Detailed report saved to: {report_file}")
+                report_file = PROJECT_ROOT / 'moleg_cleaning_report.json'
+                with open(report_file, 'w', encoding='utf-8') as f:
+                    json.dump(report, f, ensure_ascii=False, indent=2)
+                print(f"✓ Detailed report saved to: {report_file}")
+            else:
+                print(f"\n✓ Data cleaning and enrichment completed (not saved to file)")
 
         else:
             print(f"\n[DRY RUN] Operations completed successfully")
@@ -507,11 +519,20 @@ class MOLEGDataCleaner:
             'duplicates_removed': duplicates_removed,
             'extraction_stats': extraction_stats,
             'latest_date': latest_date,
-            'enriched_data': enriched_data if not dry_run else None
+            'enriched_data': enriched_data
         }
 
 if __name__ == "__main__":
-    cleaner = MOLEGDataCleaner()
+    import sys
+
+    # 명령줄 인자로 파일 지정 가능 (기본값: data_moleg_temp.json)
+    if len(sys.argv) > 1:
+        input_file = sys.argv[1]
+        cleaner = MOLEGDataCleaner(input_file=input_file)
+        print(f"처리 대상 파일: {input_file}")
+    else:
+        cleaner = MOLEGDataCleaner()
+        print("처리 대상 파일: data_moleg_temp.json (기본값)")
 
     print("MOLEG DATA CLEANING & ENRICHMENT TOOL")
     print("Focus: Remove duplicates + Extract structured fields")

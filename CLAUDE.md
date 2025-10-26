@@ -67,6 +67,7 @@ Data collection and cleaning tools:
 - `clean_kcs.py`: KCS data cleaner (duplicate removal, content filtering)
 - `clean_moleg.py`: MOLEG data cleaner and field extractor
 - `update_kcs_data.py`: KCS data merge and update utility
+- `update_moleg_data.py`: MOLEG data merge and update utility
 
 ### Multi-Agent System
 The system uses 6 AI agents running in parallel:
@@ -137,10 +138,10 @@ cd legal_precedents
 
 # Step 1: Crawl new data
 python data/crawler_moleg.py
-# Output: law_portal_data_YYYYMMDD_HHMMSS.json (in project root)
+# Output: data_moleg_temp.json (in project root)
 
-# Step 2: Clean and structure
-python data/clean_moleg.py
+# Step 2: Clean and merge
+python data/update_moleg_data.py
 # Output: data_moleg.json updated (in project root)
 ```
 
@@ -168,7 +169,7 @@ This ensures that:
 - `data_moleg.json` - MOLEG precedent data
 - `vectorization_cache.pkl.gz` - Vectorization cache
 - `data_kcs_temp.json` - Temporary crawler output (KCS)
-- `law_portal_data_*.json` - Temporary crawler output (MOLEG)
+- `data_moleg_temp.json` - Temporary crawler output (MOLEG)
 - Backup files: `data_*_backup_*.json`
 
 ### Code Files
